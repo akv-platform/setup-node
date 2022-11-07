@@ -28,6 +28,9 @@ interface INodeRelease extends tc.IToolRelease {
   lts?: string;
 }
 
+const V8_CANARY = 'v8-canary';
+const isVersionCanary = (versionSpec: string): boolean => versionSpec.includes(`-${V8_CANARY}`);
+
 export async function getNode(
   versionSpec: string,
   stable: boolean,
@@ -40,6 +43,7 @@ export async function getNode(
   let nodeVersions: INodeVersion[] | undefined;
   let osPlat: string = os.platform();
   let osArch: string = translateArchToDistUrl(arch);
+  let isCanary = isVersionCanary(versionSpec);
 
   if (isLtsAlias(versionSpec)) {
     core.info('Attempt to resolve LTS alias from manifest...');
@@ -50,10 +54,11 @@ export async function getNode(
     versionSpec = resolveLtsAliasFromManifest(versionSpec, stable, manifest);
   }
 
-  if (isLatestSyntax(versionSpec)) {
-    nodeVersions = await getVersionsFromDist();
+  // evaluate exact versionSpec from input
+  if (isLatestSyntax(versionSpec) || isCanary) {
+    nodeVersions = await getVersionsFromDist(versionSpec);
     versionSpec = await queryDistForMatch(versionSpec, arch, nodeVersions);
-    core.info(`getting latest node version...`);
+    core.info(`getting ${isCanary ? V8_CANARY : 'latest'} node version ${versionSpec}...`);
   }
 
   if (checkLatest) {
@@ -74,8 +79,15 @@ export async function getNode(
   }
 
   // check cache
-  let toolPath: string;
-  toolPath = tc.find('node', versionSpec, osArch);
+  core.info('Attempt to find existing version in cache...');
+  let toolPath: string = '';
+  if (isCanary) {
+    const localVersions = tc.findAllVersions('node', osArch);
+    toolPath = evaluateVersions(localVersions, versionSpec);
+  } else {
+    // TODO: tc.find should allow custom evolution
+    toolPath = tc.find('node', versionSpec, osArch);
+  }
 
   // If not found in cache, download
   if (toolPath) {
@@ -236,8 +248,8 @@ function resolveLtsAliasFromManifest(
     alias === '*'
       ? numbered[numbered.length - 1]
       : n < 0
-      ? numbered[numbered.length - 1 + n]
-      : aliases[alias];
+        ? numbered[numbered.length - 1 + n]
+        : aliases[alias];
 
   if (!release) {
     throw new Error(
@@ -306,7 +318,8 @@ async function getInfoFromDist(
       : `node-v${version}-${osPlat}-${osArch}`;
   let urlFileName: string =
     osPlat == 'win32' ? `${fileName}.7z` : `${fileName}.tar.gz`;
-  let url = `https://nodejs.org/dist/v${version}/${urlFileName}`;
+  const initialUrl = getNodejsDistUrl(versionSpec);
+  const url = `${initialUrl}/v${version}/${urlFileName}`;
 
   return <INodeVersionInfo>{
     downloadUrl: url,
@@ -342,15 +355,22 @@ async function resolveVersionFromManifest(
 function evaluateVersions(versions: string[], versionSpec: string): string {
   let version = '';
   core.debug(`evaluating ${versions.length} versions`);
+
   versions = versions.sort((a, b) => {
     if (semver.gt(a, b)) {
       return 1;
     }
     return -1;
   });
+
+  const matcher: (potential: string) => boolean =
+    isVersionCanary(versionSpec)
+      ? evaluateCanaryMatcher(versionSpec)
+      : (potential) => semver.satisfies(potential, versionSpec);
+
   for (let i = versions.length - 1; i >= 0; i--) {
     const potential: string = versions[i];
-    const satisfied: boolean = semver.satisfies(potential, versionSpec);
+    const satisfied: boolean = matcher(potential);
     if (satisfied) {
       version = potential;
       break;
@@ -364,6 +384,22 @@ function evaluateVersions(versions: string[], versionSpec: string): string {
   }
 
   return version;
+}
+
+function getNodejsDistUrl(version: string) {
+  const prerelease = semver.prerelease(version);
+  if (version.includes('nightly')) {
+    core.debug('requested nightly distribution');
+    return 'https://nodejs.org/download/nightly';
+  } else if (isVersionCanary(version)) {
+    core.debug('requested v8 canary distribution');
+    return 'https://nodejs.org/download/v8-canary';
+  } else if (!prerelease) {
+    return 'https://nodejs.org/dist';
+  } else {
+    core.debug('requested RC build');
+    return 'https://nodejs.org/download/rc';
+  }
 }
 
 async function queryDistForMatch(
@@ -392,16 +428,15 @@ async function queryDistForMatch(
 
   if (!nodeVersions) {
     core.debug('No dist manifest cached');
-    nodeVersions = await getVersionsFromDist();
+    nodeVersions = await getVersionsFromDist(versionSpec);
   }
-
-  let versions: string[] = [];
 
   if (isLatestSyntax(versionSpec)) {
     core.info(`getting latest node version...`);
     return nodeVersions[0].version;
   }
 
+  let versions: string[] = [];
   nodeVersions.forEach((nodeVersion: INodeVersion) => {
     // ensure this version supports your os and platform
     if (nodeVersion.files.indexOf(dataFileName) >= 0) {
@@ -414,8 +449,9 @@ async function queryDistForMatch(
   return version;
 }
 
-export async function getVersionsFromDist(): Promise<INodeVersion[]> {
-  let dataUrl = 'https://nodejs.org/dist/index.json';
+async function getVersionsFromDist(versionSpec: string): Promise<INodeVersion[]> {
+  const distUrl = getNodejsDistUrl(versionSpec);
+  const dataUrl = `${distUrl}/index.json`;
   let httpClient = new hc.HttpClient('setup-node', [], {
     allowRetries: true,
     maxRetries: 3
@@ -440,6 +476,7 @@ async function acquireNodeFromFallbackLocation(
   version: string,
   arch: string = os.arch()
 ): Promise<string> {
+  const initialUrl = getNodejsDistUrl(version);
   let osPlat: string = os.platform();
   let osArch: string = translateArchToDistUrl(arch);
 
@@ -453,8 +490,8 @@ async function acquireNodeFromFallbackLocation(
   let exeUrl: string;
   let libUrl: string;
   try {
-    exeUrl = `https://nodejs.org/dist/v${version}/win-${osArch}/node.exe`;
-    libUrl = `https://nodejs.org/dist/v${version}/win-${osArch}/node.lib`;
+    exeUrl = `${initialUrl}/v${version}/win-${osArch}/node.exe`;
+    libUrl = `${initialUrl}/v${version}/win-${osArch}/node.lib`;
 
     core.info(`Downloading only node binary from ${exeUrl}`);
 
@@ -464,8 +501,8 @@ async function acquireNodeFromFallbackLocation(
     await io.cp(libPath, path.join(tempDir, 'node.lib'));
   } catch (err) {
     if (err instanceof tc.HTTPError && err.httpStatusCode == 404) {
-      exeUrl = `https://nodejs.org/dist/v${version}/node.exe`;
-      libUrl = `https://nodejs.org/dist/v${version}/node.lib`;
+      exeUrl = `${initialUrl}/v${version}/node.exe`;
+      libUrl = `${initialUrl}/v${version}/node.lib`;
 
       const exePath = await tc.downloadTool(exeUrl);
       await io.cp(exePath, path.join(tempDir, 'node.exe'));
@@ -519,4 +556,29 @@ export function parseNodeVersionFile(contents: string): string {
 
 function isLatestSyntax(versionSpec): boolean {
   return ['current', 'latest', 'node'].includes(versionSpec);
+}
+
+function evaluateCanaryMatcher(versionSpec: string): (potential: string) => boolean {
+  const [raw, prerelease] = versionSpec.split(/-(.*)/s);
+  const isValidVersion = semver.valid(raw);
+  const rawVersion = isValidVersion ? raw : semver.coerce(raw)?.version;
+  if (rawVersion) {
+    const range = (prerelease === V8_CANARY)
+      ? semver.validRange(`^${rawVersion}`)
+      : `${rawVersion}+${prerelease.replace(V8_CANARY, V8_CANARY + '.')}`;
+    return (potential: string) =>
+      semver.satisfies(potential.replace('-' + V8_CANARY, '+' + V8_CANARY + '.'), range);
+  }
+  return () => false;
+}
+// https://jestjs.io/docs/environment-variables
+if (process.env['NODE_ENV']==='test') {
+  module.exports.evaluateCanaryMatcher = evaluateCanaryMatcher;
+  module.exports.evaluateVersions = evaluateVersions;
+  module.exports.getNodejsDistUrl = getNodejsDistUrl;
+  module.exports.getVersionsFromDist = getVersionsFromDist;
+  module.exports.isLatestSyntax = isLatestSyntax;
+  module.exports.isLtsAlias = isLtsAlias;
+  module.exports.resolveLtsAliasFromManifest = resolveLtsAliasFromManifest;
+  module.exports.queryDistForMatch = queryDistForMatch;
 }

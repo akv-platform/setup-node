@@ -14,6 +14,7 @@ import * as auth from '../src/authutil';
 
 let nodeTestManifest = require('./data/versions-manifest.json');
 let nodeTestDist = require('./data/node-dist-index.json');
+let nodeV8CanaryTestDist = require('./data/v8-canary-dist-index.json');
 
 describe('setup-node', () => {
   let inputs = {} as any;
@@ -78,7 +79,8 @@ describe('setup-node', () => {
 
     // disable authentication portion for installer tests
     authSpy = jest.spyOn(auth, 'configAuthentication');
-    authSpy.mockImplementation(() => {});
+    authSpy.mockImplementation(() => {
+    });
 
     // gets
     getManifestSpy.mockImplementation(
@@ -138,7 +140,8 @@ describe('setup-node', () => {
   });
 
   it('can mock dist versions', async () => {
-    let versions: im.INodeVersion[] = await im.getVersionsFromDist();
+    const versionSpec = '1.2.3';
+    let versions: im.INodeVersion[] = await im.getVersionsFromDist(versionSpec);
     expect(versions).toBeDefined();
     expect(versions?.length).toBe(23);
   });
@@ -949,6 +952,128 @@ describe('setup-node', () => {
     );
   });
 });
+
+describe('setup-node v8 canary', () => {
+  let getManifestSpy: jest.SpyInstance;
+  let getDistSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    getManifestSpy = jest.spyOn(tc, 'getManifestFromRepo');
+    getDistSpy = jest.spyOn(im, 'getVersionsFromDist');
+
+    getManifestSpy.mockImplementation(() => <tc.IToolRelease[]>nodeTestManifest);
+    getDistSpy.mockImplementation(() => <im.INodeVersion>nodeV8CanaryTestDist);
+  });
+
+  it('can mock manifest versions', async () => {
+    let versions: tc.IToolRelease[] | null = await tc.getManifestFromRepo(
+      'actions',
+      'node-versions',
+      'mocktoken'
+    );
+    expect(versions).toBeDefined();
+    expect(versions?.length).toBe(7);
+  });
+
+  it('can mock dist versions', async () => {
+    const versionSpec = '1.2.3';
+    const versions: im.INodeVersion[] = await im.getVersionsFromDist(versionSpec);
+    expect(versions).toBeDefined();
+    expect(versions?.length).toBe(133);
+  });
+
+  it('is not LTS alias', async () => {
+    const versionSpec = 'v99.0.0-v8-canary';
+    // @ts-ignore
+    const isLtsAlias = im.isLtsAlias(versionSpec);
+    expect(isLtsAlias).toBeFalsy();
+  })
+
+  it('is not isLatestSyntax', async () => {
+    const versionSpec = 'v99.0.0-v8-canary';
+    // @ts-ignore
+    const isLatestSyntax = im.isLatestSyntax(versionSpec);
+    expect(isLatestSyntax).toBeFalsy();
+  })
+
+  it('dist url to be https://nodejs.org/download/v8-canary', () => {
+    const versionSpec = 'v99.0.0-v8-canary';
+    // @ts-ignore
+    const url = im.getNodejsDistUrl(versionSpec);
+    expect(url).toBe('https://nodejs.org/download/v8-canary');
+  });
+
+  it('v20-v8-canary should match', () => {
+    // @ts-ignore
+    const matcher = im.evaluateCanaryMatcher('v20-v8-canary')
+    expect(matcher('v20.0.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v20.0.1-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v20.1.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v20.1.1-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v21.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v19.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+  })
+
+  it('v21-v8-canary should match', () => {
+    // @ts-ignore
+    const matcher = im.evaluateCanaryMatcher('v21-v8-canary')
+    expect(matcher('v20.0.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.0.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v21.0.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v21.1.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v19.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+  })
+
+  it('v19-v8-canary should match', () => {
+    // @ts-ignore
+    const matcher = im.evaluateCanaryMatcher('v19-v8-canary')
+    expect(matcher('v20.0.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.0.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v21.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v19.0.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v19.1.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+  })
+
+  it('v20.1-v8-canary should match', () => {
+    // @ts-ignore
+    const matcher = im.evaluateCanaryMatcher('v20.1-v8-canary')
+    expect(matcher('v20.0.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.0.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.0-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v20.1.1-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v21.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v19.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+  })
+
+  it('v20.1.1-v8-canary should match', () => {
+    // @ts-ignore
+    const matcher = im.evaluateCanaryMatcher('v20.1.1-v8-canary')
+    expect(matcher('v20.0.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.0.1-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v20.1.1-v8-canary20221103f7e2421e91')).toBeTruthy();
+    expect(matcher('v21.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+    expect(matcher('v19.1.0-v8-canary20221103f7e2421e91')).toBeFalsy();
+  })
+
+  it('v8 canary evaluateVersions', () => {
+    const versions = ['v20.0.0-v8-canary20221103f7e2421e91',
+      'v20.0.1-v8-canary20221103f7e2421e91',
+      'v20.1.0-v8-canary20221103f7e2421e91',
+      'v20.1.1-v8-canary20221103f7e2421e91',
+      'v21.1.0-v8-canary20221103f7e2421e91',
+      'v19.1.0-v8-canary20221103f7e2421e91',
+    ]
+    // @ts-ignore
+    const version = im.evaluateVersions(versions, 'v20-v8-canary')
+    expect(version).toBe('v20.1.1-v8-canary20221103f7e2421e91');
+  })
+
+})
 
 describe('helper methods', () => {
   describe('parseNodeVersionFile', () => {
