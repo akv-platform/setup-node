@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import * as io from '@actions/io';
 import * as tc from '@actions/tool-cache';
+import * as httpm from '@actions/http-client';
 import * as exec from '@actions/exec';
 import * as im from '../src/installer';
 import * as cache from '@actions/cache';
@@ -66,6 +67,7 @@ describe('setup-node', () => {
     exSpy = jest.spyOn(tc, 'extractTar');
     cacheSpy = jest.spyOn(tc, 'cacheDir');
     getManifestSpy = jest.spyOn(tc, 'getManifestFromRepo');
+    // @ts-ignore
     getDistSpy = jest.spyOn(im, 'getVersionsFromDist');
     parseNodeVersionSpy = jest.spyOn(im, 'parseNodeVersionFile');
 
@@ -141,6 +143,7 @@ describe('setup-node', () => {
 
   it('can mock dist versions', async () => {
     const versionSpec = '1.2.3';
+    // @ts-ignore getVersionsFromDist not exported
     let versions: im.INodeVersion[] = await im.getVersionsFromDist(versionSpec);
     expect(versions).toBeDefined();
     expect(versions?.length).toBe(23);
@@ -953,33 +956,11 @@ describe('setup-node', () => {
   });
 });
 
-describe('setup-node v8 canary', () => {
-  let getManifestSpy: jest.SpyInstance;
-  let getDistSpy: jest.SpyInstance;
+describe('setup-node v8 canary unit tests', () => {
 
-  beforeEach(() => {
-    getManifestSpy = jest.spyOn(tc, 'getManifestFromRepo');
-    getDistSpy = jest.spyOn(im, 'getVersionsFromDist');
-
-    getManifestSpy.mockImplementation(() => <tc.IToolRelease[]>nodeTestManifest);
-    getDistSpy.mockImplementation(() => <im.INodeVersion>nodeV8CanaryTestDist);
-  });
-
-  it('can mock manifest versions', async () => {
-    let versions: tc.IToolRelease[] | null = await tc.getManifestFromRepo(
-      'actions',
-      'node-versions',
-      'mocktoken'
-    );
-    expect(versions).toBeDefined();
-    expect(versions?.length).toBe(7);
-  });
-
-  it('can mock dist versions', async () => {
-    const versionSpec = '1.2.3';
-    const versions: im.INodeVersion[] = await im.getVersionsFromDist(versionSpec);
-    expect(versions).toBeDefined();
-    expect(versions?.length).toBe(133);
+  afterEach(() => {
+    jest.resetAllMocks();
+    jest.clearAllMocks();
   });
 
   it('is not LTS alias', async () => {
@@ -996,8 +977,15 @@ describe('setup-node v8 canary', () => {
     expect(isLatestSyntax).toBeFalsy();
   })
 
-  it('dist url to be https://nodejs.org/download/v8-canary', () => {
+  it('dist url to be https://nodejs.org/download/v8-canary for input versionSpec', () => {
     const versionSpec = 'v99.0.0-v8-canary';
+    // @ts-ignore
+    const url = im.getNodejsDistUrl(versionSpec);
+    expect(url).toBe('https://nodejs.org/download/v8-canary');
+  });
+
+  it('dist url to be https://nodejs.org/download/v8-canary for full versionSpec', () => {
+    const versionSpec = 'v20.0.0-v8-canary20221103f7e2421e91';
     // @ts-ignore
     const url = im.getNodejsDistUrl(versionSpec);
     expect(url).toBe('https://nodejs.org/download/v8-canary');
@@ -1073,7 +1061,186 @@ describe('setup-node v8 canary', () => {
     expect(version).toBe('v20.1.1-v8-canary20221103f7e2421e91');
   })
 
+  it('v8 canary queryDistForMatch', async () => {
+    jest.spyOn(osm, 'platform').mockImplementationOnce(()=>'linux')
+    // @ts-ignore
+    const version = await im.queryDistForMatch('v20-v8-canary', 'x64', nodeV8CanaryTestDist)
+    expect(version).toBe('v20.0.0-v8-canary20221103f7e2421e91');
+  })
+
 })
+
+describe('setup-node v8 canary e2e tests', () => {
+  // system
+  let cnSpy: jest.SpyInstance;
+  let getExecOutputSpy: jest.SpyInstance;
+
+  // os
+  let os = {} as any;
+  let platSpy: jest.SpyInstance;
+  let archSpy: jest.SpyInstance;
+
+  // @actions/http-client
+  let getDistIndexJsonSpy: jest.SpyInstance;
+
+  // @actions/core
+  let inputs = {} as any;
+  let inSpy: jest.SpyInstance;
+  let infoSpy: jest.SpyInstance;
+  let warningSpy: jest.SpyInstance;
+  let dbgSpy: jest.SpyInstance;
+
+  // @actions/tool-cache
+  let cacheSpy: jest.SpyInstance;
+  let dlSpy: jest.SpyInstance;
+  let exSpy: jest.SpyInstance;
+  let getManifestSpy: jest.SpyInstance;
+  let findAllVersionSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    // system
+    cnSpy = jest.spyOn(process.stdout, 'write');
+    cnSpy.mockImplementation(line => {
+      // uncomment to debug
+      // process.stderr.write('write:' + line + '\n');
+    });
+    // @actions/exec
+    getExecOutputSpy = jest.spyOn(exec, 'getExecOutput');
+    getExecOutputSpy.mockImplementation(() => 'v16.15.0');
+
+    // os
+    os = {};
+    platSpy = jest.spyOn(osm, 'platform');
+    platSpy.mockImplementation(() => os['platform']);
+    archSpy = jest.spyOn(osm, 'arch');
+    archSpy.mockImplementation(() => os['arch']);
+
+    // @actions/http-client
+    getDistIndexJsonSpy = jest.spyOn(httpm.HttpClient.prototype, 'getJson');
+    getDistIndexJsonSpy.mockImplementation(() => ({
+      result: nodeV8CanaryTestDist
+    }))
+
+    // @actions/core
+    process.stdout.write('::stop-commands::stoptoken'); // Disable executing of runner commands when running tests in actions
+    process.env['GITHUB_PATH'] = ''; // Stub out ENV file functionality so we can verify it writes to standard out
+    process.env['GITHUB_OUTPUT'] = ''; // Stub out ENV file functionality so we can verify it writes to standard out
+    inputs = {};
+    inSpy = jest.spyOn(core, 'getInput');
+    inSpy.mockImplementation(name => inputs[name]);
+    infoSpy = jest.spyOn(core, 'info');
+    infoSpy.mockImplementation(line => {
+      // uncomment to debug
+      // process.stderr.write('info:' + line + '\n');
+    });
+    warningSpy = jest.spyOn(core, 'warning');
+    warningSpy.mockImplementation(msg => {
+      // uncomment to debug
+      // process.stderr.write('log:' + msg + '\n');
+    });
+    dbgSpy = jest.spyOn(core, 'debug');
+    dbgSpy.mockImplementation(msg => {
+      // uncomment to see debug output
+      // process.stderr.write('debug:' + msg + '\n');
+    });
+
+    // @actions/tool-cache
+    findAllVersionSpy = jest.spyOn(tc, 'findAllVersions');
+    dlSpy = jest.spyOn(tc, 'downloadTool');
+    dlSpy.mockImplementation(async () => '/some/temp/path');
+    exSpy = jest.spyOn(tc, 'extractTar');
+    exSpy.mockImplementation(async () => '/some/other/temp/path');
+    cacheSpy = jest.spyOn(tc, 'cacheDir');
+    let toolPath = path.normalize('/cache/node/12.16.2/x64');
+    cacheSpy.mockImplementation(async () => toolPath);
+
+    getManifestSpy = jest.spyOn(tc, 'getManifestFromRepo');
+    getManifestSpy.mockImplementation(() => <tc.IToolRelease[]>nodeTestManifest);
+
+    // @actions/setup-node
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks();
+    jest.clearAllMocks();
+  });
+
+  it('dist versions is mocked', async () => {
+    const versionSpec = '1.2.3';
+    // @ts-ignore getVersionsFromDist not exported
+    let versions: im.INodeVersion[] = await im.getVersionsFromDist(versionSpec);
+    expect(versions).toBeDefined();
+    expect(versions?.length).toBe(133);
+  });
+
+  it('v8 canary setup node flow without cached', async () => {
+
+    let versionSpec = 'v20-v8-canary';
+
+    inputs['node-version'] = versionSpec;
+    inputs['always-auth'] = false;
+    inputs['token'] = 'faketoken';
+
+    os.platform = 'linux';
+    os.arch = 'x64';
+
+    findAllVersionSpy.mockImplementation(() => []);
+
+    await main.run();
+
+    expect(dbgSpy.mock.calls[0][0]).toBe('requested v8 canary distribution');
+    expect(dbgSpy.mock.calls[1][0]).toBe('evaluating 130 versions');
+    expect(dbgSpy.mock.calls[2][0]).toBe('matched: v20.0.0-v8-canary20221103f7e2421e91');
+    expect(infoSpy.mock.calls[0][0]).toBe('getting v8-canary node version v20.0.0-v8-canary20221103f7e2421e91...');
+    expect(infoSpy.mock.calls[1][0]).toBe('Attempt to find existing version in cache...');
+    expect(dbgSpy.mock.calls[3][0]).toBe('evaluating 0 versions');
+    expect(dbgSpy.mock.calls[4][0]).toBe('match not found');
+    expect(infoSpy.mock.calls[2][0]).toBe('Attempting to download v20.0.0-v8-canary20221103f7e2421e91...');
+    expect(dbgSpy.mock.calls[5][0]).toBe('No manifest cached');
+    expect(dbgSpy.mock.calls[6][0]).toBe('Getting manifest from actions/node-versions@main');
+    expect(dbgSpy.mock.calls[7][0].slice(0,6)).toBe('check ');
+    expect(dbgSpy.mock.calls[13][0].slice(0,6)).toBe('check ');
+    expect(infoSpy.mock.calls[3][0]).toBe('Not found in manifest.  Falling back to download directly from Node');
+    expect(dbgSpy.mock.calls[14][0]).toBe('evaluating 130 versions');
+    expect(dbgSpy.mock.calls[15][0]).toBe('matched: v20.0.0-v8-canary20221103f7e2421e91');
+    expect(dbgSpy.mock.calls[16][0]).toBe('requested v8 canary distribution');
+    expect(infoSpy.mock.calls[4][0]).toBe('Acquiring 20.0.0-v8-canary20221103f7e2421e91 - x64 from https://nodejs.org/download/v8-canary/v20.0.0-v8-canary20221103f7e2421e91/node-v20.0.0-v8-canary20221103f7e2421e91-linux-x64.tar.gz');
+
+    expect(dlSpy).toHaveBeenCalledTimes(1);
+    expect(exSpy).toHaveBeenCalledTimes(1);
+    expect(cacheSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('v8 canary setup node flow with cached', async () => {
+
+    let versionSpec = 'v20-v8-canary';
+
+    inputs['node-version'] = versionSpec;
+    inputs['always-auth'] = false;
+    inputs['token'] = 'faketoken';
+
+    os.platform = 'linux';
+    os.arch = 'x64';
+
+    findAllVersionSpy.mockImplementation(() => ['v20.0.0-v8-canary20221103f7e2421e91']);
+
+    await main.run();
+
+    expect(dbgSpy.mock.calls[0][0]).toBe('requested v8 canary distribution');
+    expect(dbgSpy.mock.calls[1][0]).toBe('evaluating 130 versions');
+    expect(dbgSpy.mock.calls[2][0]).toBe('matched: v20.0.0-v8-canary20221103f7e2421e91');
+    expect(infoSpy.mock.calls[0][0]).toBe('getting v8-canary node version v20.0.0-v8-canary20221103f7e2421e91...');
+    expect(infoSpy.mock.calls[1][0]).toBe('Attempt to find existing version in cache...');
+    expect(dbgSpy.mock.calls[3][0]).toBe('evaluating 1 versions');
+    expect(dbgSpy.mock.calls[4][0]).toBe('matched: v20.0.0-v8-canary20221103f7e2421e91');
+    expect(infoSpy.mock.calls[2][0]).toBe('Found in cache @ v20.0.0-v8-canary20221103f7e2421e91');
+    expect(cnSpy.mock.calls[1][0]).toBe('::add-path::v20.0.0-v8-canary20221103f7e2421e91/bin\n');
+
+    expect(dlSpy).not.toHaveBeenCalled();
+    expect(exSpy).not.toHaveBeenCalled();
+    expect(cacheSpy).not.toHaveBeenCalled();
+  });
+});
 
 describe('helper methods', () => {
   describe('parseNodeVersionFile', () => {
