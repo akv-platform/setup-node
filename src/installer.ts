@@ -45,6 +45,8 @@ export async function getNode(
   let osArch: string = translateArchToDistUrl(arch);
   let isCanary = isVersionCanary(versionSpec);
 
+  core.debug(`isVersionCanary=${isCanary} osPlat=${osPlat} osArch=${osArch}`);
+
   if (isLtsAlias(versionSpec)) {
     core.info('Attempt to resolve LTS alias from manifest...');
 
@@ -54,8 +56,9 @@ export async function getNode(
     versionSpec = resolveLtsAliasFromManifest(versionSpec, stable, manifest);
   }
 
-  // evaluate exact versionSpec from input
   if (isLatestSyntax(versionSpec) || isCanary) {
+    core.info('Attempt to resolve version from nodejs distro...');
+    core.debug(`isLatestSyntax=${isLatestSyntax(versionSpec)}, isCanary=${isCanary}`);
     nodeVersions = await getVersionsFromDist(versionSpec);
     versionSpec = await queryDistForMatch(versionSpec, arch, nodeVersions);
     core.info(`getting ${isCanary ? V8_CANARY : 'latest'} node version ${versionSpec}...`);
