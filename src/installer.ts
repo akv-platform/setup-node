@@ -306,7 +306,8 @@ async function getInfoFromDist(
       : `node-v${version}-${osPlat}-${osArch}`;
   let urlFileName: string =
     osPlat == 'win32' ? `${fileName}.7z` : `${fileName}.tar.gz`;
-  let url = `https://nodejs.org/dist/v${version}/${urlFileName}`;
+  const isPrerelease = (semver.prerelease(versionSpec) ?? [])[0] === 'rc';
+  let url = isPrerelease ? `https://nodejs.org/download/rc/v${version}/${urlFileName}` : `https://nodejs.org/dist/v${version}/${urlFileName}`;
 
   return <INodeVersionInfo>{
     downloadUrl: url,
@@ -392,7 +393,8 @@ async function queryDistForMatch(
 
   if (!nodeVersions) {
     core.debug('No dist manifest cached');
-    nodeVersions = await getVersionsFromDist();
+    let preRelease = semver.prerelease(versionSpec) ?? [];
+    nodeVersions = await (preRelease[0] === 'rc' ? getRcVersionsFromDist() : getVersionsFromDist());
   }
 
   let versions: string[] = [];
@@ -416,6 +418,16 @@ async function queryDistForMatch(
 
 export async function getVersionsFromDist(): Promise<INodeVersion[]> {
   let dataUrl = 'https://nodejs.org/dist/index.json';
+  let httpClient = new hc.HttpClient('setup-node', [], {
+    allowRetries: true,
+    maxRetries: 3
+  });
+  let response = await httpClient.getJson<INodeVersion[]>(dataUrl);
+  return response.result || [];
+}
+
+export async function getRcVersionsFromDist(): Promise<INodeVersion[]> {
+  let dataUrl = 'https://nodejs.org/download/rc/index.json';
   let httpClient = new hc.HttpClient('setup-node', [], {
     allowRetries: true,
     maxRetries: 3

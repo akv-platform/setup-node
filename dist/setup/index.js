@@ -73391,6 +73391,7 @@ function getInfoFromManifest(versionSpec, stable, auth, osArch = translateArchTo
     });
 }
 function getInfoFromDist(versionSpec, arch = os.arch(), nodeVersions) {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         let osPlat = os.platform();
         let osArch = translateArchToDistUrl(arch);
@@ -73406,7 +73407,8 @@ function getInfoFromDist(versionSpec, arch = os.arch(), nodeVersions) {
             ? `node-v${version}-win-${osArch}`
             : `node-v${version}-${osPlat}-${osArch}`;
         let urlFileName = osPlat == 'win32' ? `${fileName}.7z` : `${fileName}.tar.gz`;
-        let url = `https://nodejs.org/dist/v${version}/${urlFileName}`;
+        const isPrerelease = ((_a = semver.prerelease(versionSpec)) !== null && _a !== void 0 ? _a : [])[0] === 'rc';
+        let url = isPrerelease ? `https://nodejs.org/download/rc/v${version}/${urlFileName}` : `https://nodejs.org/dist/v${version}/${urlFileName}`;
         return {
             downloadUrl: url,
             resolvedVersion: version,
@@ -73454,6 +73456,7 @@ function evaluateVersions(versions, versionSpec) {
     return version;
 }
 function queryDistForMatch(versionSpec, arch = os.arch(), nodeVersions) {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         let osPlat = os.platform();
         let osArch = translateArchToDistUrl(arch);
@@ -73474,7 +73477,8 @@ function queryDistForMatch(versionSpec, arch = os.arch(), nodeVersions) {
         }
         if (!nodeVersions) {
             core.debug('No dist manifest cached');
-            nodeVersions = yield getVersionsFromDist();
+            let preRelease = (_a = semver.prerelease(versionSpec)) !== null && _a !== void 0 ? _a : [];
+            nodeVersions = yield (preRelease[0] === 'rc' ? getRcVersionsFromDist() : getVersionsFromDist());
         }
         let versions = [];
         if (isLatestSyntax(versionSpec)) {
@@ -73504,6 +73508,18 @@ function getVersionsFromDist() {
     });
 }
 exports.getVersionsFromDist = getVersionsFromDist;
+function getRcVersionsFromDist() {
+    return __awaiter(this, void 0, void 0, function* () {
+        let dataUrl = 'https://nodejs.org/download/rc/index.json';
+        let httpClient = new hc.HttpClient('setup-node', [], {
+            allowRetries: true,
+            maxRetries: 3
+        });
+        let response = yield httpClient.getJson(dataUrl);
+        return response.result || [];
+    });
+}
+exports.getRcVersionsFromDist = getRcVersionsFromDist;
 // For non LTS versions of Node, the files we need (for Windows) are sometimes located
 // in a different folder than they normally are for other versions.
 // Normally the format is similar to: https://nodejs.org/dist/v5.10.1/node-v5.10.1-win-x64.7z
