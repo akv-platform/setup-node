@@ -22,7 +22,7 @@ See [action.yml](action.yml)
   with:
     # Version Spec of the version to use in SemVer notation.
     # It also emits such aliases as lts, latest, nightly and canary builds
-    # Examples: 12.x, 10.15.1, >=10.15.0, lts/Hydrogen, 16-nightly, latest, node
+    # Examples: 12.x, 10.15.1, >=10.15.0, lts/Hydrogen, lts/*, 16-nightly, latest, node
     node-version: ''
 
     # File containing the version Spec of the version to use.  Examples: .nvmrc, .node-version, .tool-versions.
