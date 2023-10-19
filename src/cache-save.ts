@@ -1,8 +1,6 @@
 import * as core from '@actions/core';
 import * as cache from '@actions/cache';
 
-import fs from 'fs';
-
 import {State} from './constants';
 import {getPackageManagerInfo} from './cache-utils';
 
@@ -16,20 +14,19 @@ process.on('uncaughtException', e => {
 
 export async function run() {
   try {
-    const cacheLock = core.getInput('cache');
+    const cacheLock = core.getState(State.CachePackageManager);
     await cachePackages(cacheLock);
   } catch (error) {
-    core.setFailed(error.message);
+    core.setFailed((error as Error).message);
   }
 }
 
 const cachePackages = async (packageManager: string) => {
   const state = core.getState(State.CacheMatchedKey);
   const primaryKey = core.getState(State.CachePrimaryKey);
-  let cachePaths = JSON.parse(
+  const cachePaths = JSON.parse(
     core.getState(State.CachePaths) || '[]'
   ) as string[];
-  cachePaths = cachePaths.filter(fs.existsSync);
 
   const packageManagerInfo = await getPackageManagerInfo(packageManager);
   if (!packageManagerInfo) {

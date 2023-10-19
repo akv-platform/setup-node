@@ -60335,7 +60335,11 @@ exports.debug = debug; // for test
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -60361,14 +60365,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const cache = __importStar(__nccwpck_require__(7799));
-const fs_1 = __importDefault(__nccwpck_require__(7147));
 const constants_1 = __nccwpck_require__(9042);
 const cache_utils_1 = __nccwpck_require__(1678);
 // Catch and log any unhandled exceptions.  These exceptions can leak out of the uploadChunk method in
@@ -60381,7 +60381,7 @@ process.on('uncaughtException', e => {
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const cacheLock = core.getInput('cache');
+            const cacheLock = core.getState(constants_1.State.CachePackageManager);
             yield cachePackages(cacheLock);
         }
         catch (error) {
@@ -60393,9 +60393,8 @@ exports.run = run;
 const cachePackages = (packageManager) => __awaiter(void 0, void 0, void 0, function* () {
     const state = core.getState(constants_1.State.CacheMatchedKey);
     const primaryKey = core.getState(constants_1.State.CachePrimaryKey);
-    let cachePaths = JSON.parse(core.getState(constants_1.State.CachePaths) || '[]');
-    cachePaths = cachePaths.filter(fs_1.default.existsSync);
-    const packageManagerInfo = yield cache_utils_1.getPackageManagerInfo(packageManager);
+    const cachePaths = JSON.parse(core.getState(constants_1.State.CachePaths) || '[]');
+    const packageManagerInfo = yield (0, cache_utils_1.getPackageManagerInfo)(packageManager);
     if (!packageManagerInfo) {
         core.debug(`Caching for '${packageManager}' is not supported`);
         return;
@@ -60428,7 +60427,11 @@ run();
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -60470,22 +60473,22 @@ exports.supportedPackageManagers = {
     npm: {
         name: 'npm',
         lockFilePatterns: ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock'],
-        getCacheFolderPath: () => exports.getCommandOutputNotEmpty('npm config get cache', 'Could not get npm cache folder path')
+        getCacheFolderPath: () => (0, exports.getCommandOutputNotEmpty)('npm config get cache', 'Could not get npm cache folder path')
     },
     pnpm: {
         name: 'pnpm',
         lockFilePatterns: ['pnpm-lock.yaml'],
-        getCacheFolderPath: () => exports.getCommandOutputNotEmpty('pnpm store path --silent', 'Could not get pnpm cache folder path')
+        getCacheFolderPath: () => (0, exports.getCommandOutputNotEmpty)('pnpm store path --silent', 'Could not get pnpm cache folder path')
     },
     yarn: {
         name: 'yarn',
         lockFilePatterns: ['yarn.lock'],
         getCacheFolderPath: (projectDir) => __awaiter(void 0, void 0, void 0, function* () {
-            const yarnVersion = yield exports.getCommandOutputNotEmpty(`yarn --version`, 'Could not retrieve version of yarn', projectDir);
+            const yarnVersion = yield (0, exports.getCommandOutputNotEmpty)(`yarn --version`, 'Could not retrieve version of yarn', projectDir);
             core.debug(`Consumed yarn version is ${yarnVersion} (working dir: "${projectDir || ''}")`);
             const stdOut = yarnVersion.startsWith('1.')
-                ? yield exports.getCommandOutput('yarn cache dir', projectDir)
-                : yield exports.getCommandOutput('yarn config get cacheFolder', projectDir);
+                ? yield (0, exports.getCommandOutput)('yarn cache dir', projectDir)
+                : yield (0, exports.getCommandOutput)('yarn config get cacheFolder', projectDir);
             if (!stdOut) {
                 throw new Error(`Could not get yarn cache folder path for ${projectDir}`);
             }
@@ -60505,7 +60508,7 @@ const getCommandOutput = (toolCommand, cwd) => __awaiter(void 0, void 0, void 0,
 });
 exports.getCommandOutput = getCommandOutput;
 const getCommandOutputNotEmpty = (toolCommand, error, cwd) => __awaiter(void 0, void 0, void 0, function* () {
-    const stdOut = exports.getCommandOutput(toolCommand, cwd);
+    const stdOut = (0, exports.getCommandOutput)(toolCommand, cwd);
     if (!stdOut) {
         throw new Error(error);
     }
@@ -60555,7 +60558,7 @@ const getProjectDirectoriesFromCacheDependencyPath = (cacheDependencyPath) => __
     const cacheDependenciesPaths = yield globber.glob();
     const existingDirectories = cacheDependenciesPaths
         .map(path_1.default.dirname)
-        .filter(util_1.unique())
+        .filter((0, util_1.unique)())
         .map(dirName => fs_1.default.realpathSync(dirName))
         .filter(directory => fs_1.default.lstatSync(directory).isDirectory());
     if (!existingDirectories.length)
@@ -60578,7 +60581,7 @@ const getCacheDirectoriesFromCacheDependencyPath = (packageManagerInfo, cacheDep
         return cacheFolderPath;
     })));
     // uniq in order to do not cache the same directories twice
-    return cacheFoldersPaths.filter(util_1.unique());
+    return cacheFoldersPaths.filter((0, util_1.unique)());
 });
 /**
  * Finds the cache directories configured for the repo ignoring cache-dependency-path
@@ -60628,7 +60631,7 @@ const projectHasYarnBerryManagedDependencies = (directory) => __awaiter(void 0, 
         return Promise.resolve(false);
     }
     // NOTE: yarn1 returns 'undefined' with return code = 0
-    const enableGlobalCache = yield exports.getCommandOutput('yarn config get enableGlobalCache', workDir);
+    const enableGlobalCache = yield (0, exports.getCommandOutput)('yarn config get enableGlobalCache', workDir);
     // only local cache is not managed by yarn
     const managed = enableGlobalCache.includes('false');
     if (managed) {
@@ -60692,6 +60695,7 @@ var LockType;
 })(LockType = exports.LockType || (exports.LockType = {}));
 var State;
 (function (State) {
+    State["CachePackageManager"] = "SETUP_NODE_CACHE_PACKAGE_MANAGER";
     State["CachePrimaryKey"] = "CACHE_KEY";
     State["CacheMatchedKey"] = "CACHE_RESULT";
     State["CachePaths"] = "CACHE_PATHS";
@@ -60711,7 +60715,11 @@ var Outputs;
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];

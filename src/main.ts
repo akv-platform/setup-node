@@ -9,6 +9,7 @@ import {restoreCache} from './cache-restore';
 import {isCacheFeatureAvailable} from './cache-utils';
 import {getNodejsDistribution} from './distributions/installer-factory';
 import {parseNodeVersionFile, printEnvDetailsAndSetOutput} from './util';
+import {State} from './constants';
 
 export async function run() {
   try {
@@ -60,6 +61,7 @@ export async function run() {
     }
 
     if (cache && isCacheFeatureAvailable()) {
+      core.saveState(State.CachePackageManager, cache);
       const cacheDependencyPath = core.getInput('cache-dependency-path');
       await restoreCache(cache, cacheDependencyPath);
     }
@@ -73,7 +75,7 @@ export async function run() {
       `##[add-matcher]${path.join(matchersPath, 'eslint-compact.json')}`
     );
   } catch (err) {
-    core.setFailed(err.message);
+    core.setFailed((err as Error).message);
   }
 }
 
